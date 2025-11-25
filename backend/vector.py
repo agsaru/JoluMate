@@ -1,8 +1,18 @@
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_classic.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
+
 def create_vectorstore(chunks):
-    model=HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
-    vectorstore=FAISS.from_documents(chunks,model)
-    vectorstore.save_local("jolumate_vector")
+    clean_chunks = [
+        doc for doc in chunks
+        if getattr(doc, "page_content", "") and doc.page_content.strip()
+    ]
+
+    if not clean_chunks:
+        raise ValueError("NO_TEXT")
+
+    embedding_model = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-mpnet-base-v2"
+    )
+
+    vectorstore = FAISS.from_documents(clean_chunks, embedding_model)
     return vectorstore
-    

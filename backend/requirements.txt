@@ -11,10 +11,10 @@ faiss-cpu
 sentence-transformers
 
 pytesseract
-pdf2image
 
-
-streamlit
 
 fastapi
 uvicorn
+
+python-pptx
+python-docx
