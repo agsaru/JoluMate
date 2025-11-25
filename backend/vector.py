@@ -11,7 +11,7 @@ def create_vectorstore(chunks):
         raise ValueError("NO_TEXT")
 
     embedding_model = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-mpnet-base-v2"
+        model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     )
 
     vectorstore = FAISS.from_documents(clean_chunks, embedding_model)
