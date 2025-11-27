@@ -8,9 +8,7 @@ pymupdf
 
 faiss-cpu 
 
-sentence-transformers
 
-pytesseract
 
 
 fastapi

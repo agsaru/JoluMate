@@ -39,6 +39,9 @@ async def upload_files(files: list[UploadFile] = File(...)):
         docs.extend(load_file(filepath))
 
     chunks = text_splitter(docs)
+    if len(chunks)>100:
+        raise HTTPException(status_code=400,detail="Try to upload with maximum 100 pages If it has more words than 500 please try to upload maximum 50 to 60 words file")
+
     try:
         vectorstore = create_vectorstore(chunks)
     except ValueError as e:

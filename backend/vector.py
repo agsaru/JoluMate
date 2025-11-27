@@ -1,6 +1,8 @@
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
 def create_vectorstore(chunks):
     clean_chunks = [
         doc for doc in chunks
@@ -10,9 +12,6 @@ def create_vectorstore(chunks):
     if not clean_chunks:
         raise ValueError("NO_TEXT")
 
-    embedding_model = HuggingFaceEmbeddings(
-        model = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    )
-
+    embedding_model=ChatGoogleGenerativeAI(model="gemini-embedding-001",api_key=os.getenv("GOOGLE_API_KEY"))
     vectorstore = FAISS.from_documents(clean_chunks, embedding_model)
     return vectorstore

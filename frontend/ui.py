@@ -6,7 +6,7 @@ BACKEND_BASE_URL = st.secrets["BACKEND_BASE_URL"]
 st.title("JoluMate - Study Assistant")
 
 uploaded_files = st.file_uploader(
-    "Upload study materials",
+    "Upload study materials. Try to upload files with less than 80 pages",
     type=["pdf", "docx", "pptx", "txt"],
     accept_multiple_files=True
 )
