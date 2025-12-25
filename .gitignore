@@ -205,3 +205,81 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# ------------------------------------
+# NODE / JAVASCRIPT / TYPESCRIPT
+# ------------------------------------
+
+# Node modules
+node_modules/
+
+# Build output
+build/
+dist/
+out/
+coverage/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Cache
+.cache/
+tmp/
+temp/
+
+# Package lock files (optional)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ------------------------------------
+# REACT SPECIFIC
+# ------------------------------------
+
+# Production build
+/.next/
+/.out/
+/.vercel/
+
+# React testing files
+jest-cache/
+jest/
+coverage/
+
+# ------------------------------------
+# EDITOR / TOOLING
+# ------------------------------------
+
+# VSCode
+.vscode/
+.history/
+*.code-workspace
+
+# WebStorm / JetBrains
+.idea/
+
+# ------------------------------------
+# OS / SYSTEM FILES
+# ------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ------------------------------------
+# MISC
+# ------------------------------------
+*.log
+*.bak
+*.tmp
