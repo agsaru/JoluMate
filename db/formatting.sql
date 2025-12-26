@@ -1,13 +1,20 @@
 
-CREATE EXTENSION vector;
+CREATE EXTENSION IF NOT EXISTS vector;
+
 SELECT extname FROM pg_extension;
 
+GRANT USAGE ON SCHEMA pg_catalog TO public;
+
+DROP TABLE IF EXISTS users;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+SELECT current_schema();
 
 CREATE TABLE users(
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    hashedPassword TEXT NOT NULL,
+    hashed_password TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 )
 
@@ -21,8 +28,15 @@ CREATE TABLE refresh_tokens (
 
 CREATE TABLE chats (
     id BIGSERIAL PRIMARY KEY,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
+CREATE TABLE conversations(
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+
+)

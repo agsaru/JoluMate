@@ -6,13 +6,14 @@ router=APIRouter(
     tags=['chat']
 )
 
-from typing import TypedDict
+from pydantic import BaseModel
 from dotenv import load_dotenv
 load_dotenv()
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
-class Que(TypedDict):
+class Que(BaseModel):
     question:str
     
 @router.post('/')
@@ -22,22 +23,10 @@ def get_ans(que:Que):
     if not question.strip():
         raise HTTPException(status_code=400,detail="Query cannot be empty")
     
-    model=ChatGoogleGenerativeAI(model='gemini-2.5-flash',api_key=os.getenv("GOOGLE_API_KEY"))
+    # model=ChatGoogleGenerativeAI(model='gemini-2.5-flash',api_key=os.getenv("GOOGLE_API_KEY"))
+    model=ChatGroq(model='openai/gpt-oss-120b',api_key=os.getenv("GROQ_API_KEY"))
     response = model.invoke(question)
     return {'message':response.content}
-
-@router.post("/")
-def send_message(conversation_id:str,message:str,conn=Depends(get_conn),user_id:str=Depends(get_user)):
-    if not message.strip():
-        raise HTTPException(400,"Message cannot be empty")
-    conn.execute(
-        """
-        INSERT INTO chat(user_id,conversation_id,role,message)
-        VALUES(%s,%s,%s,%s)
-        """,
-        (user_id,conversation_id,"user",message)
-    )
-    return {'message':"Message saved"}
 
 @router.get("/history")
 def get_chat_history(conversation_id: str,conn=Depends(get_conn),user_id:str=Depends(get_user)):

@@ -9,6 +9,7 @@ def hash_password(password: str) -> str:
     if not password or not password.strip():
         raise ValueError("Password cannot be empty")
     try:
+        print("password hashed")
         return context.hash(password)
     except Exception as e:
         raise SystemError("Failed to hash password") from e
