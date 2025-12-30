@@ -17,9 +17,13 @@ from logs.logging_config import logger
 from middlewares.log_requests import log_requests
 from configs.db import pool
 from contextlib import asynccontextmanager
+from agent.graph import checkpointer
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await pool.open()
+
+    await checkpointer.setup()
+
     yield
     await pool.close()
     logger.info("Database pool closed")

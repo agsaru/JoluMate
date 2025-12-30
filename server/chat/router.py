@@ -4,11 +4,13 @@ from configs.db import get_conn
 from auth.auth import get_user
 from logs.logging_config import logger
 from pydantic import BaseModel
+from langchain.messages import HumanMessage
 from dotenv import load_dotenv
 load_dotenv()
 import os
 # from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
+from agent.graph import workflow
 router=APIRouter(
     prefix='/chat',
     tags=['chat']
@@ -71,19 +73,21 @@ async def get_ans(data:MessageData,conn=Depends(get_conn),user=Depends(get_user)
             """,
             (conversation_id,'user',message)
         )
-    # model=ChatGoogleGenerativeAI(model='gemini-2.5-flash',api_key=os.getenv("GOOGLE_API_KEY"))
-    model=ChatGroq(model='openai/gpt-oss-120b',api_key=os.getenv("GROQ_API_KEY"))
-    response =await model.ainvoke(message)
+    config={"configurable":{"thread_id":conversation_id}}
+    initial_state=HumanMessage(content=message)
+
+    final_state =await workflow.ainvoke({"messages":[initial_state]},config=config)
+    ai_response=final_state['messages'][-1].content
     async with conn.cursor() as cur:
         await cur.execute(
             """INSERT INTO chats (conversation_id,role,content)
             VALUES (%s,%s,%s)
             """,
-            (conversation_id,'assistant',response.content)
+            (conversation_id,'assistant',ai_response)
         )
     return {
         'conversation_id':conversation_id,
-        'message':response.content,
+        'message':ai_response,
     }
 
 @router.get("/{conversation_id}")
