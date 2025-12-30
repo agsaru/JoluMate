@@ -62,7 +62,7 @@ async def signup(data: SignUpData, conn=Depends(get_conn)):
         )
 
 @router.post("/login")
-async def login(data: LoginData, conn=Depends(get_conn)):
+async def login(data: LoginData,response:Response, conn=Depends(get_conn)):
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, hashed_password FROM users WHERE email=%s",
@@ -85,10 +85,23 @@ async def login(data: LoginData, conn=Depends(get_conn)):
         refresh_token,
         refresh_token_expiry(),
     )
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60,
+    )
+    response.set_cookie(
+    "refresh_token",
+    refresh_token,
+    httponly=True,
+    samesite="lax",
+    max_age=60 * 60 * 24 * 30,
+)
 
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
+        "access_token": access_token
     }
 
 @router.post("/refresh")

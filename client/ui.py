@@ -19,12 +19,12 @@ if user_input:
     })
 
     response = requests.post(
-            f"{BACKEND_URL}/chat/",
+            f"{BACKEND_URL}/chat/ask",
             json={"question": user_input}
         )
 
     data = response.json()
-
+    st.write(data)
     st.session_state.messages.append({
         "role": "assistant",
         "message": data["message"]

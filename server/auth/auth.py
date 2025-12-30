@@ -1,9 +1,10 @@
-from jose import jwt
+from jose import jwt,JWTError
 import os
 from datetime import datetime,timedelta,timezone
 from fastapi import Cookie,HTTPException,Depends
 import secrets
-
+from dotenv import load_dotenv
+load_dotenv()
 from configs.db import get_conn
 SECRET_KEY = os.getenv("JWT_SECRET")
 
@@ -30,19 +31,22 @@ async def get_user( access_token: str | None = Cookie(default=None),conn=Depends
     try:
         payload=jwt.decode(access_token,SECRET_KEY,algorithms='HS256')
         user_id=payload['sub']
-        cursor=await conn.execute(
-            """
-           SELECT id, name,email FROM users
-           WHERE email=%s
-            
-            """,
+        if not user_id:
+            raise HTTPException(status_code=401,detail="Invalid token payload")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT id, name, email FROM users WHERE id=%s",
             (user_id,),
         )
-        user=await cursor.fetchone()
-        return user
-    except Exception:
-        raise HTTPException(status_code=401,detail="Invalid or expired token")
+        user = await cur.fetchone()
 
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return user
 async def store_refresh_token(
     conn,
     user_id: str,

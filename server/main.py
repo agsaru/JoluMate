@@ -12,6 +12,7 @@ from pydantic import BaseModel
 import uvicorn
 from chat.router import router as chat_router
 from auth.router import router as auth_router
+from conversation.router import router as conv_router
 from logs.logging_config import logger
 from middlewares.log_requests import log_requests
 from configs.db import pool
@@ -26,6 +27,7 @@ app = FastAPI(lifespan=lifespan)
 app.middleware("http")(log_requests)
 app.include_router(chat_router)
 app.include_router(auth_router)
+app.include_router(conv_router)
 
 @app.get("/")
 def hello():
