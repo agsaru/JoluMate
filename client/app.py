@@ -1,7 +1,9 @@
 import streamlit as st
 
-from api import get_me, login, logout, signup, get_ans, get_chats
-
+from api import (
+    get_me, login, logout, signup, get_ans, get_chats, 
+    get_user_conversations, delete_user_conversation
+)
 if "user" not in st.session_state:
     st.session_state.user = None
 if "messages" not in st.session_state:
@@ -42,7 +44,6 @@ def onlogin():
     if res.status_code == 200:
         st.success("Login Successful")
         load_user()
-        st.rerun() 
     else:
         st.error("Invalid credentials")
 
@@ -88,19 +89,68 @@ if st.session_state.user is None:
         st.button("Signup", on_click=onsignup)
 else:
     with st.sidebar:
-        st.write(f"Logged in as: {st.session_state.user.get('name', 'User')}")
-        if st.button("Logout"):
+        st.write(f" **{st.session_state.user.get('name', 'User')}**")
+        
+        if st.button(" New Chat", use_container_width=True):
+            st.session_state.conversation_id = None
+            st.session_state.messages = []
+            st.rerun()
+
+        st.divider()
+        st.subheader("History")
+
+        try:
+            res = get_user_conversations()
+            if res.status_code == 200:
+                conversations = res.json()
+                
+                if not conversations:
+                    st.caption("No recent chats")
+
+                for convo in conversations:
+                    col1, col2 = st.columns([0.8, 0.2])
+                    
+                    with col1:
+                        is_active = st.session_state.conversation_id == convo['id']
+                        btn_type = "primary" if is_active else "secondary"
+                        
+                        title_label = convo['title'][:18] + "..." if len(convo['title']) > 18 else convo['title']
+                        
+                        if st.button(title_label, key=f"load_{convo['id']}", help=convo['title'], type=btn_type):
+                            st.session_state.conversation_id = convo['id']
+                            st.session_state.messages = [] 
+                            st.rerun()
+
+                    with col2:
+                        if st.button("Delete", key=f"del_{convo['id']}"):
+                            del_res = delete_user_conversation(convo['id'])
+                            if del_res.status_code == 202:
+                                if st.session_state.conversation_id == convo['id']:
+                                    st.session_state.conversation_id = None
+                                    st.session_state.messages = []
+                                st.rerun()
+            else:
+                st.error("Could not load history")
+        except Exception as e:
+            st.error(f"Connection Error: {e}")
+
+        st.divider()
+        if st.button("Logout", use_container_width=True):
             logout()
             st.session_state.user = None
             st.session_state.messages = []
             st.session_state.conversation_id = None
             st.rerun()
 
-    if not st.session_state.messages:
-        st.title("Get started with JoluMate")
+    if st.session_state.conversation_id and not st.session_state.messages:
+        load_chats()
+
+    if not st.session_state.messages and not st.session_state.conversation_id:
+        st.title("👋 JoluMate")
+        st.markdown("Start a new conversation using the sidebar!")
     else:
         for message in st.session_state.messages:
             with st.chat_message(message['role']):
                 st.write(message['message'])
-    
+
     st.chat_input("Ask Your Question", key="question", on_submit=onchat)

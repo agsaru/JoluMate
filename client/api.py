@@ -54,3 +54,16 @@ def get_chats(conversation_id:str):
     f"{BASE_URL}/chat/{conversation_id}"
     )
     return response
+
+def get_user_conversations():
+    response = session.get(
+        f"{BASE_URL}/conversations"
+    )
+    return response
+
+def delete_user_conversation(conversation_id: str):
+    response = session.post(
+        f"{BASE_URL}/conversations/delete",
+        params={"conversation_id": conversation_id}
+    )
+    return response
