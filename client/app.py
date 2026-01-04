@@ -1,9 +1,9 @@
 import streamlit as st
+from api import get_me, login, logout, signup, get_ans, get_chats, get_conversations,delete_conversation, upload_doc
+import requests
+if "api_session" not in st.session_state:
+    st.session_state.api_session = requests.Session()
 
-from api import (
-    get_me, login, logout, signup, get_ans, get_chats, 
-    get_user_conversations, delete_user_conversation
-)
 if "user" not in st.session_state:
     st.session_state.user = None
 if "messages" not in st.session_state:
@@ -13,63 +13,76 @@ if "conversation_id" not in st.session_state:
 
 def load_user():
     try:
-        res = get_me()
+        res = get_me(st.session_state.api_session) 
         if res.status_code == 200:
             st.session_state.user = res.json()
     except Exception as e:
         print(f"Error loading user: {e}")
 
-def load_chats():
-    if st.session_state.conversation_id:
-        res = get_chats(st.session_state.conversation_id)
-        if res.status_code == 200:
-            st.session_state.messages = res.json()
+def load_chats(conv_id):
+    res = get_chats(st.session_state.api_session, conv_id)
+    if res.status_code == 200:
+        st.session_state.messages = res.json()
+        st.session_state.conversation_id = conv_id
 
 def onsignup():
     res = signup(
+        st.session_state.api_session, 
         st.session_state.signup_name,
         st.session_state.signup_email,
         st.session_state.signup_password
     )
-    if res.status_code == 200:
+    if res.status_code == 201:
         st.success("Account created! Please login.")
     else:
         st.error("Signup failed.")
 
 def onlogin():
     res = login(
+        st.session_state.api_session,
         st.session_state.login_email,
         st.session_state.login_password
     )
     if res.status_code == 200:
-        st.success("Login Successful")
         load_user()
     else:
         st.error("Invalid credentials")
 
+def onlogout():
+    logout(st.session_state.api_session)
+    st.session_state.api_session.cookies.clear()
+    st.session_state.user = None
+    st.session_state.messages = []
+    st.session_state.conversation_id = None
+    st.rerun()
+
 def onchat():
     user_input = st.session_state.question
-    
+    if not user_input:
+        return
+    st.session_state.messages.append({"role": "user", "message": user_input})
     res = get_ans(
+        st.session_state.api_session,
         user_input,
         st.session_state.conversation_id
     )
     
     if res.status_code == 200:
         data = res.json()
-        
-        if st.session_state.conversation_id is None:
-            st.session_state.conversation_id = data.get('conversation_id')
-        
-        st.session_state.messages.append({"role": "user", "message": user_input})
+        st.session_state.conversation_id = data.get('conversation_id')
         st.session_state.messages.append({"role": "assistant", "message": data['message']})
     else:
         st.error("Failed to get response")
-
+def on_delete(conv_id):
+    res = delete_conversation(st.session_state.api_session, conv_id)
+    if res.status_code == 202:
+        if st.session_state.conversation_id == conv_id:
+            st.session_state.conversation_id = None
+            st.session_state.messages = []
+        st.rerun()
+    else:
+        st.error("Could not delete.")
 load_user()
-
-if st.session_state.user and st.session_state.conversation_id and not st.session_state.messages:
-    load_chats()
 
 if st.session_state.user is None:
     st.title("Welcome to JoluMate")
@@ -87,70 +100,53 @@ if st.session_state.user is None:
         st.text_input("Email", key="signup_email")
         st.text_input("Password", type="password", key="signup_password")
         st.button("Signup", on_click=onsignup)
+
 else:
     with st.sidebar:
-        st.write(f" **{st.session_state.user.get('name', 'User')}**")
+        st.write(f"Logged in as: **{st.session_state.user.get('name', 'User')}**")
         
-        if st.button(" New Chat", use_container_width=True):
+        if st.button("Logout"):
+            onlogout()
+        st.divider()
+        if st.button("New Chat"):
             st.session_state.conversation_id = None
             st.session_state.messages = []
             st.rerun()
-
+            
+        uploaded_file = st.file_uploader("Upload PDF", type=['pdf'])
+        if uploaded_file is not None:
+            if st.button("Process PDF"):
+                with st.spinner("Reading and embedding..."):
+                    res = upload_doc(st.session_state.api_session, uploaded_file)
+                    if res.status_code == 200:
+                        st.success("PDF Learned! You can now ask questions about it.")
+                    else:
+                        st.error("Failed to process PDF.")
+        
         st.divider()
         st.subheader("History")
-
-        try:
-            res = get_user_conversations()
-            if res.status_code == 200:
-                conversations = res.json()
+        
+        conv_res = get_conversations(st.session_state.api_session)
+        if conv_res.status_code == 200:
+            conversations = conv_res.json()
+            for convo in conversations:
+                col1, col2 = st.columns([0.8, 0.2])
+            
+                with col1:
+                    title_label = convo.get('title') or "Untitled Chat"
+                    if st.button(f"{title_label}", key=f"btn_{convo['id']}", help="Open Chat"):
+                        load_chats(convo['id'])
+                        st.rerun()
                 
-                if not conversations:
-                    st.caption("No recent chats")
+                with col2:
+                    if st.button("", icon=":material/delete:", key=f"del_{convo['id']}", help="Delete Chat"):
+                        on_delete(convo['id'])
 
-                for convo in conversations:
-                    col1, col2 = st.columns([0.8, 0.2])
-                    
-                    with col1:
-                        is_active = st.session_state.conversation_id == convo['id']
-                        btn_type = "primary" if is_active else "secondary"
-                        
-                        title_label = convo['title'][:18] + "..." if len(convo['title']) > 18 else convo['title']
-                        
-                        if st.button(title_label, key=f"load_{convo['id']}", help=convo['title'], type=btn_type):
-                            st.session_state.conversation_id = convo['id']
-                            st.session_state.messages = [] 
-                            st.rerun()
-
-                    with col2:
-                        if st.button("Delete", key=f"del_{convo['id']}"):
-                            del_res = delete_user_conversation(convo['id'])
-                            if del_res.status_code == 202:
-                                if st.session_state.conversation_id == convo['id']:
-                                    st.session_state.conversation_id = None
-                                    st.session_state.messages = []
-                                st.rerun()
-            else:
-                st.error("Could not load history")
-        except Exception as e:
-            st.error(f"Connection Error: {e}")
-
-        st.divider()
-        if st.button("Logout", use_container_width=True):
-            logout()
-            st.session_state.user = None
-            st.session_state.messages = []
-            st.session_state.conversation_id = None
-            st.rerun()
-
-    if st.session_state.conversation_id and not st.session_state.messages:
-        load_chats()
-
-    if not st.session_state.messages and not st.session_state.conversation_id:
-        st.title("👋 JoluMate")
-        st.markdown("Start a new conversation using the sidebar!")
+    if not st.session_state.messages:
+        st.title("Get started with JoluMate")
     else:
         for message in st.session_state.messages:
             with st.chat_message(message['role']):
                 st.write(message['message'])
-
+    
     st.chat_input("Ask Your Question", key="question", on_submit=onchat)

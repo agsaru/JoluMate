@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, UploadFile,status, File, Depends, HTTPException
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage 
 from configs.db import get_conn
 from auth.auth import get_user
 from logs.logging_config import logger
 from agent.graph import workflow
+from rag.utils import process_pdf
 
 router = APIRouter(
     prefix='/chat',
@@ -70,7 +71,12 @@ async def get_ans(data: MessageData, conn=Depends(get_conn), user=Depends(get_us
             """,
             (conversation_id, 'user', message)
         )
-    config = {"configurable": {"thread_id": conversation_id}}
+    config = {
+        "configurable": {
+            "thread_id": conversation_id,
+            "user_id": user['id'] 
+        }
+    }
     initial_state = HumanMessage(content=message)
     
     final_state = await workflow.ainvoke({"messages": [initial_state]}, config=config)
@@ -110,3 +116,14 @@ async def get_chat_history(conversation_id: str, conn=Depends(get_conn), user=De
             "created_at": message["created_at"]
         } for message in messages
     ]
+
+@router.post("/upload")
+async def upload_file(file: UploadFile = File(...), user=Depends(get_user)):
+    try:
+        file_content = await file.read()
+        await process_pdf(file_content, user['id'])
+        return {"message": "PDF processed successfully"}
+        
+    except Exception as e:
+        print(f"Upload Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process PDF")
