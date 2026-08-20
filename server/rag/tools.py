@@ -15,7 +15,9 @@ async def search_knowledge_base(query: str, config: RunnableConfig) -> str:
     if not user_id:
         return "Error: No user identified for this search."
 
-    results = await search_documents(query, user_id)
+    conversation_id = config.get("configurable", {}).get("conversation_id")
+    results = await search_documents(query, user_id, conversation_id)
+
     
     if not results:
         return "No relevant information found in your documents."

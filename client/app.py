@@ -82,7 +82,8 @@ def on_delete(conv_id):
         st.rerun()
     else:
         st.error("Could not delete.")
-load_user()
+if st.session_state.user is None:
+    load_user()
 
 if st.session_state.user is None:
     st.title("Welcome to JoluMate")
@@ -114,10 +115,13 @@ else:
             st.rerun()
             
         uploaded_file = st.file_uploader("Upload PDF", type=['pdf'])
-        if uploaded_file is not None:
+        if st.session_state.conversation_id is None:
+          st.warning("Start a chat before uploading a PDF")
+
+        elif uploaded_file is not None:
             if st.button("Process PDF"):
                 with st.spinner("Reading and embedding..."):
-                    res = upload_doc(st.session_state.api_session, uploaded_file)
+                    res = upload_doc(st.session_state.api_session, uploaded_file, st.session_state.conversation_id)
                     if res.status_code == 200:
                         st.success("PDF Learned! You can now ask questions about it.")
                     else:

@@ -1,6 +1,10 @@
+import os
+import re
+
 from fastapi import APIRouter, HTTPException, Depends, Response, Cookie, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
 from configs.db import get_conn
 from auth.hash import hash_password, verify_password
@@ -13,12 +17,27 @@ from auth.auth import (
 )
 from logs.logging_config import logger
 
+load_dotenv()
+
+IS_PRODUCTION = os.getenv("IS_PRODUCTION", "false").lower() == "true"
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 class SignUpData(BaseModel):
     name: str
     email: EmailStr
     password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not re.search(r"[A-Za-z]", v):
+            raise ValueError("Password must contain at least one letter")
+        if not re.search(r"\d", v):
+            raise ValueError("Password must contain at least one digit")
+        return v
 
 
 class LoginData(BaseModel):
@@ -89,16 +108,18 @@ async def login(data: LoginData,response:Response, conn=Depends(get_conn)):
         key="access_token",
         value=access_token,
         httponly=True,
+        secure=IS_PRODUCTION,
         samesite="lax",
         max_age=60 * 60,
     )
     response.set_cookie(
-    "refresh_token",
-    refresh_token,
-    httponly=True,
-    samesite="lax",
-    max_age=60 * 60 * 24 * 30,
-)
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
 
     return {
         "access_token": access_token
@@ -146,16 +167,18 @@ async def refresh(
     )
 
     response.set_cookie(
-        "access_token",
-        new_access,
+        key="access_token",
+        value=new_access,
         httponly=True,
+        secure=IS_PRODUCTION,
         samesite="lax",
         max_age=3600,
     )
     response.set_cookie(
-        "refresh_token",
-        new_refresh,
+        key="refresh_token",
+        value=new_refresh,
         httponly=True,
+        secure=IS_PRODUCTION,
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )

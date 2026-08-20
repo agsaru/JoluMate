@@ -25,7 +25,7 @@ def get_me(session):
     return response
 
 def logout(session):
-    response = session.get(f"{BASE_URL}/auth/logout")
+    response = session.post(f"{BASE_URL}/auth/logout")
     return response
 
 def get_ans(session, message: str, conversation_id: str = None):
@@ -48,7 +48,7 @@ def delete_conversation(session, conversation_id: str):
         params={"conversation_id": conversation_id}
     )
     return response
-def upload_doc(session, file):
+def upload_doc(session, file, conversation_id):
     files = {"file": (file.name, file, "application/pdf")}
-    response = session.post(f"{BASE_URL}/chat/upload", files=files)
-    return response
+    params = {"conversation_id": conversation_id}
+    return session.post(f"{BASE_URL}/chat/upload", files=files, params=params)
