@@ -23,7 +23,7 @@ async def search_knowledge_base(query: str, config: RunnableConfig) -> str:
     conversation_id = configurable.get("conversation_id")
 
     if not user_id or not conversation_id:
-        return "Document search is unavailable because conversation context is missing."
+        return "Study material search is unavailable because conversation context is missing."
 
     results = await search_documents(query, user_id, conversation_id)
 
