@@ -123,7 +123,7 @@ def onchat():
             )
         else:
             user_message["status"] = "failed"
-            st.error(response_error(res, "JoluMate couldn't generate a response. Your message is saved; you can send it again."))
+            st.error(response_error(res, "JoluMate couldn't generate a response. Your message was saved; continue with a new message."))
     except requests.exceptions.Timeout:
         user_message["status"] = "failed"
         st.error("JoluMate is taking longer than expected. Your message may have been saved; check the chat before retrying.")
@@ -229,6 +229,6 @@ else:
             with st.chat_message(message["role"]):
                 st.write(message["message"])
                 if message.get("status") == "failed":
-                    st.caption("This message did not receive an AI response. You can send it again.")
+                    st.caption("This message was saved, but no AI response was generated. You can continue with a new message.")
 
     st.chat_input("Ask Your Question", key="question", on_submit=onchat)
