@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, status, File, Depends, HTTPException, Request, Query
+from pypdf.errors import PdfReadError
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -16,14 +17,12 @@ from rag.utils import process_pdf
 limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# --- Constants ---
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_MESSAGE_LENGTH = 4000
 PDF_MAGIC_BYTES = b"%PDF"
 MAX_TITLE_LENGTH = 40
 
 
-# --- Request / Response Models ---
 class MessageData(BaseModel):
     message: str
     conversation_id: Optional[str] = None
@@ -45,7 +44,6 @@ class UploadResponse(BaseModel):
     chunks_processed: int
 
 
-# --- Helpers ---
 def generate_title(text: str) -> str:
     """Generate a readable title from the first message."""
     text = text.strip()
@@ -91,7 +89,6 @@ async def conversation_lock(conversation_id: str):
             )
 
 
-# --- Endpoints ---
 @router.post("/ask", response_model=AskResponse)
 @limiter.limit("10/minute")
 async def get_ans(
@@ -313,14 +310,25 @@ async def upload_file(
             )
 
         try:
-            chunks = await process_pdf(bytes(file_content), user["id"], conversation_id)
-        except Exception:
-            logger.exception(
-                "PDF processing failed for conversation %s", conversation_id
+            chunks = await process_pdf(
+                bytes(file_content),
+                user["id"],
+                conversation_id,
+                file.filename or "uploaded.pdf",
             )
+        except PdfReadError:
+            logger.info("Invalid or unreadable PDF for conversation %s", conversation_id)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="We couldn't read this PDF. Please check that it is a valid, text-based PDF.",
+            )
+        except Exception:
+            logger.exception(
+                "Document processing failed for conversation %s", conversation_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Document processing is temporarily unavailable. Please try again.",
             )
 
     if not chunks:
