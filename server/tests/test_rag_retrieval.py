@@ -93,7 +93,7 @@ def test_search_documents_includes_filename_and_page_citations(monkeypatch):
     async def fake_retrieve_documents(query, user_id, conversation_id, limit):
         return [
             Document(
-                page_content="Employees receive photosynthesis.",
+                page_content="Photosynthesis converts light energy into chemical energy.",
                 metadata={"filename": "biology_notes.pdf", "page_number": 7},
             )
         ]
@@ -106,5 +106,5 @@ def test_search_documents_includes_filename_and_page_citations(monkeypatch):
 
     assert result == (
         "[Source: biology_notes.pdf, page 7]\n"
-        "Employees receive photosynthesis."
+        "Photosynthesis converts light energy into chemical energy."
     )
