@@ -195,9 +195,11 @@ async def retrieve_documents(
                 """
                 SELECT id, content, filename, page_number, chunk_index, start_index
                 FROM documents
-                WHERE user_id = %s AND conversation_id = %s
+                WHERE user_id = %s
+                  AND conversation_id = %s
+                  AND embedding_model = %s
                 """,
-                (user_id, conversation_id),
+                (user_id, conversation_id, EMBEDDING_MODEL),
             )
             documents = await cur.fetchall()
 
