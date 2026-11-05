@@ -84,7 +84,9 @@ def test_hybrid_retrieval_scopes_both_searches_to_user_and_conversation(monkeypa
         assert "WHERE user_id = %s AND conversation_id = %s" in query or (
             "WHERE user_id = %s" in query and "AND conversation_id = %s" in query
         )
+        assert "embedding_model = %s" in query
         assert params[0:2] == ("user-123", "conversation-456")
+        assert params[2] == utils.EMBEDDING_MODEL
 
 
 def test_search_documents_includes_filename_and_page_citations(monkeypatch):

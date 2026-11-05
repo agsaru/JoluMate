@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, status, File, Depends, HTTPException, Request, Query
-from pypdf.errors import PdfReadError
-from pydantic import BaseModel
+from pypdf.errors import FileNotDecryptedError, PdfReadError
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -42,6 +42,7 @@ class ChatMessage(BaseModel):
 class UploadResponse(BaseModel):
     message: str
     chunks_processed: int
+    pages_without_text: list[int] = Field(default_factory=list)
 
 
 def generate_title(text: str) -> str:
@@ -316,6 +317,11 @@ async def upload_file(
                 conversation_id,
                 file.filename or "uploaded.pdf",
             )
+        except FileNotDecryptedError:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="This PDF is password-protected. Please upload an unlocked PDF.",
+            )
         except PdfReadError:
             logger.info("Invalid or unreadable PDF for conversation %s", conversation_id)
             raise HTTPException(
@@ -331,13 +337,23 @@ async def upload_file(
                 detail="Document processing is temporarily unavailable. Please try again.",
             )
 
-    if not chunks:
+    if not chunks["chunks_processed"]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="No searchable text was found in this PDF. Scanned or image-only PDFs are not supported.",
         )
 
+    pages_without_text = chunks["pages_without_text"]
+    message = "PDF processed successfully"
+    if pages_without_text:
+        skipped_pages = ", ".join(map(str, pages_without_text))
+        message = (
+            f"PDF processed with {len(pages_without_text)} page(s) skipped "
+            f"because they contain no extractable text: {skipped_pages}."
+        )
+
     return UploadResponse(
-        message="PDF processed successfully",
-        chunks_processed=chunks,
+        message=message,
+        chunks_processed=chunks["chunks_processed"],
+        pages_without_text=pages_without_text,
     )

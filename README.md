@@ -230,7 +230,7 @@ cd server
 python scripts/evaluate_retrieval.py
 ```
 
-The runner reports Recall@5 and MRR@5. Add questions with known supporting pages before using these metrics to tune retrieval thresholds or weights.
+The runner reports Recall@5 and MRR@5. Add questions with known supporting pages before using these metrics to tune retrieval thresholds or weights. `RAG_MIN_RELEVANCE_SCORE` is optional; when enabled, results without a reranker score are rejected rather than passed to the answer model.
 
 ## Usage
 
