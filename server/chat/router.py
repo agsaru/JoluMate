@@ -2,10 +2,11 @@ from fastapi import APIRouter, UploadFile, status, File, Depends, HTTPException,
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 from langchain_core.messages import HumanMessage
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-from configs.db import get_conn
+from configs.db import get_conn, pool
 from auth.auth import get_user
 from logs.logging_config import logger
 from agent.graph import workflow
@@ -44,13 +45,8 @@ class UploadResponse(BaseModel):
 
 # --- Helpers ---
 def generate_title(text: str) -> str:
-    """Generate a readable title from the first message.
-
-    Truncates at word boundaries up to MAX_TITLE_LENGTH characters,
-    appending an ellipsis when truncated.
-    """
+    """Generate a readable title from the first message."""
     text = text.strip()
-    # Use first sentence if short enough
     for delimiter in (".", "?", "!"):
         idx = text.find(delimiter)
         if 0 < idx <= MAX_TITLE_LENGTH:
@@ -59,12 +55,28 @@ def generate_title(text: str) -> str:
     if len(text) <= MAX_TITLE_LENGTH:
         return text
 
-    # Truncate at last word boundary
     truncated = text[:MAX_TITLE_LENGTH]
     last_space = truncated.rfind(" ")
     if last_space > MAX_TITLE_LENGTH // 2:
         truncated = truncated[:last_space]
     return truncated.rstrip() + "…"
+
+
+@asynccontextmanager
+async def conversation_lock(conversation_id: str):
+    """Serialize operations on one conversation across API workers."""
+    async with pool.connection() as lock_conn:
+        await lock_conn.execute(
+            "SELECT pg_advisory_lock(hashtextextended(%s, 0))",
+            (str(conversation_id),),
+        )
+        try:
+            yield
+        finally:
+            await lock_conn.execute(
+                "SELECT pg_advisory_unlock(hashtextextended(%s, 0))",
+                (str(conversation_id),),
+            )
 
 
 # --- Endpoints ---
@@ -101,7 +113,10 @@ async def get_ans(
             logger.info(
                 f"Conversation created {conversation_id} for user {user['id']}"
             )
-    else:
+
+    async with conversation_lock(conversation_id):
+        # Recheck ownership after acquiring the lock. The conversation may
+        # have been deleted while this request was waiting.
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -117,38 +132,48 @@ async def get_ans(
                     detail="Conversation not found",
                 )
 
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            INSERT INTO chats (conversation_id, role, content)
-            VALUES (%s, %s, %s)
-            """,
-            (conversation_id, "user", message),
-        )
+            await cur.execute(
+                """
+                INSERT INTO chats (conversation_id, role, content)
+                VALUES (%s, %s, %s)
+                """,
+                (conversation_id, "user", message),
+            )
 
-    config = {
-        "configurable": {
-            "thread_id": conversation_id,
-            "user_id": user["id"],
-            "conversation_id": conversation_id,
+        config = {
+            "configurable": {
+                "thread_id": str(conversation_id),
+                "user_id": user["id"],
+                "conversation_id": str(conversation_id),
+            }
         }
-    }
 
-    initial_state = HumanMessage(content=message)
+        try:
+            final_state = await workflow.ainvoke(
+                {"messages": [HumanMessage(content=message)]},
+                config=config,
+            )
+            ai_response = final_state["messages"][-1].content
+            if not isinstance(ai_response, str):
+                ai_response = str(ai_response)
+        except Exception:
+            logger.exception(
+                "AI response generation failed for conversation %s",
+                conversation_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="JoluMate couldn't generate a response. Your message was saved; please try again.",
+            )
 
-    final_state = await workflow.ainvoke(
-        {"messages": [initial_state]}, config=config
-    )
-    ai_response = final_state["messages"][-1].content
-
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            INSERT INTO chats (conversation_id, role, content)
-            VALUES (%s, %s, %s)
-            """,
-            (conversation_id, "assistant", ai_response),
-        )
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO chats (conversation_id, role, content)
+                VALUES (%s, %s, %s)
+                """,
+                (conversation_id, "assistant", ai_response),
+            )
 
     return AskResponse(
         conversation_id=str(conversation_id),
@@ -173,7 +198,7 @@ async def get_chat_history(
                 ON conversations.id = chats.conversation_id
             WHERE chats.conversation_id = %s
               AND conversations.user_id = %s
-            ORDER BY chats.created_at ASC
+            ORDER BY chats.created_at ASC, chats.id ASC
             LIMIT %s OFFSET %s
             """,
             (conversation_id, user["id"], limit, offset),
@@ -196,6 +221,7 @@ async def upload_file(
     request: Request,
     conversation_id: str,
     file: UploadFile = File(...),
+    conn=Depends(get_conn),
     user=Depends(get_user),
 ):
     if not conversation_id:
@@ -220,32 +246,48 @@ async def upload_file(
             detail="Conversation not found",
         )
 
-    # --- Validate file type ---
     if file.content_type != "application/pdf":
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="Only PDF files are supported",
         )
 
-    # --- Read and validate size ---
-    file_content = await file.read()
+    # Read in bounded chunks so oversized uploads are rejected without
+    # loading the entire file into memory.
+    file_content = bytearray()
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        file_content.extend(chunk)
+        if len(file_content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
+            )
 
-    if len(file_content) > MAX_UPLOAD_SIZE:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024 * 1024)} MB",
-        )
-
-    # --- Validate PDF magic bytes ---
-    if not file_content[:4].startswith(PDF_MAGIC_BYTES):
+    if not bytes(file_content[:4]).startswith(PDF_MAGIC_BYTES):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             detail="File does not appear to be a valid PDF",
         )
 
-    chunks = await process_pdf(file_content, user["id"], conversation_id)
+    try:
+        chunks = await process_pdf(bytes(file_content), user["id"], conversation_id)
+    except Exception:
+        logger.exception("PDF processing failed for conversation %s", conversation_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="We couldn't read this PDF. Please check that it is a valid, text-based PDF.",
+        )
+
+    if not chunks:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No searchable text was found in this PDF. Scanned PDFs may need OCR before uploading.",
+        )
 
     return UploadResponse(
         message="PDF processed successfully",
-        chunks_processed=chunks or 0,
+        chunks_processed=chunks,
     )
