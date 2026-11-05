@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, status, File, Depends, HTTPException, Request, Query
 from pypdf.errors import FileNotDecryptedError, PdfReadError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -42,7 +42,7 @@ class ChatMessage(BaseModel):
 class UploadResponse(BaseModel):
     message: str
     chunks_processed: int
-    pages_without_text: list[int] = []
+    pages_without_text: list[int] = Field(default_factory=list)
 
 
 def generate_title(text: str) -> str:
