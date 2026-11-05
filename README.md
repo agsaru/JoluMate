@@ -1,11 +1,9 @@
 # JoluMate
 
-JoluMate is an AI chatbot application designed for interactive   
-conversations, secure user authentication, and intelligent       
-responses powered by Retrieval Augmented Generation (RAG). Users 
-can manage their chat history, engage with the AI assistant, and 
-upload PDF documents to provide custom knowledge for
-context-aware interactions.
+JoluMate is an AI-powered study assistant that helps students learn
+from their notes, textbooks, and other PDF study materials. It uses
+Retrieval Augmented Generation (RAG) to answer questions with relevant
+context from uploaded materials, while also supporting general questions.
 
 ## Table of Contents
 *   ✨ [Key Features](#key-features)
@@ -23,15 +21,11 @@ Variables](#configuration--environment-variables)
 
 *   **User Authentication**: Robust signup, login, logout, and   
 token refresh mechanisms using JWT for secure access.
-*   **Chatbot Interaction**: Engage in natural language
-conversations with an AI assistant powered by a Groq LLM.        
+*   **Study Assistance**: Ask questions, understand concepts, and learn from uploaded study materials.        
 *   **Conversation Management**: View, load, and delete
 individual chat conversations, maintaining chat history.
-*   **Document Upload**: Upload PDF files which are processed,   
-chunked, embedded, and stored to augment the AI's knowledge base.
-*   **Retrieval Augmented Generation (RAG)**: The AI agent       
-leverages uploaded documents to provide contextually relevant and
-informed responses.
+*   **Study Material Upload**: Upload PDF notes, textbooks, and learning materials for searchable study context.
+*   **Retrieval Augmented Generation (RAG)**: The AI assistant retrieves relevant passages from uploaded study materials to provide grounded explanations.
 *   **LangGraph Workflow**: An asynchronous LangGraph
 orchestrates the AI agent's decision-making, tool usage (like    
 knowledge base search), and state management.
@@ -226,7 +220,7 @@ Relevance filtering is disabled by default because its score threshold should be
 Create a JSONL file with one query per line. Each expected source uses the format `filename.pdf#page_number`:
 
 ```json
-{"query": "What is the leave policy?", "expected_sources": ["employee-handbook.pdf#12"]}
+{"query": "Explain the process of photosynthesis.", "expected_sources": ["biology-notes.pdf#12"]}
 ```
 
 Set `RAG_EVAL_USER_ID`, `RAG_EVAL_CONVERSATION_ID`, and optionally `RAG_EVAL_DATASET`, then run:
@@ -250,7 +244,7 @@ a new account or log in with existing credentials.
 conversations, send messages, and view chat history in the main  
 panel.
 4.  **Upload Documents**: Use the "Upload PDF" feature in the    
-sidebar to add PDF documents. The AI agent will then be able to  
+sidebar to add PDF study materials. The AI agent will then be able to  
 retrieve information from these documents to answer your
 questions.
 5.  **Manage Conversations**: In the sidebar, you can select     
@@ -386,7 +380,7 @@ LangGraph. It establishes an asynchronous workflow named
 "JoluMate" using a `ChatGroq` LLM (specifically
 `llama-3.3-70b-versatile`).
     *   The agent uses a `search_knowledge_base` tool
-(`rag.tools.search_knowledge_base`) to query uploaded documents. 
+(`rag.tools.search_knowledge_base`) to query uploaded study materials. 
     *   The LangGraph workflow is built with an `agent_node` (for
 LLM invocation with a system prompt) and a `ToolNode` (for       
 executing tools). Conditional routing ensures the graph
