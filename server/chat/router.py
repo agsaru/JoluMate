@@ -167,13 +167,16 @@ async def get_chat_history(
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            SELECT role, content, created_at
+            SELECT chats.role, chats.content, chats.created_at
             FROM chats
-            WHERE conversation_id = %s
-            ORDER BY created_at ASC
+            INNER JOIN conversations
+                ON conversations.id = chats.conversation_id
+            WHERE chats.conversation_id = %s
+              AND conversations.user_id = %s
+            ORDER BY chats.created_at ASC
             LIMIT %s OFFSET %s
             """,
-            (conversation_id, limit, offset),
+            (conversation_id, user["id"], limit, offset),
         )
         messages = await cur.fetchall()
 
@@ -199,6 +202,22 @@ async def upload_file(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="conversation_id required",
+        )
+
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id FROM conversations
+            WHERE id=%s AND user_id=%s
+            """,
+            (conversation_id, user["id"]),
+        )
+        conversation = await cur.fetchone()
+
+    if not conversation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
         )
 
     # --- Validate file type ---
