@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
 from configs.db import get_conn
 from auth.auth import get_user
@@ -9,7 +8,6 @@ from logs.logging_config import logger
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-# --- Response Models ---
 class ConversationItem(BaseModel):
     id: str
     title: str
@@ -20,7 +18,6 @@ class DeleteResponse(BaseModel):
     message: str
 
 
-# --- Endpoints ---
 @router.get("", response_model=list[ConversationItem])
 async def list_conversations(
     limit: int = Query(default=20, ge=1, le=100),
@@ -34,7 +31,7 @@ async def list_conversations(
             SELECT id, title, created_at
             FROM conversations
             WHERE user_id = %s
-            ORDER BY created_at DESC
+            ORDER BY created_at DESC, id DESC
             LIMIT %s OFFSET %s
             """,
             (user["id"], limit, offset),
@@ -51,51 +48,67 @@ async def list_conversations(
     ]
 
 
-@router.post("/delete", status_code=status.HTTP_202_ACCEPTED, response_model=DeleteResponse)
+@router.post(
+    "/delete",
+    status_code=status.HTTP_200_OK,
+    response_model=DeleteResponse,
+)
 async def delete_conversation(
     conversation_id: str,
     conn=Depends(get_conn),
     user=Depends(get_user),
 ):
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT id FROM conversations
-            WHERE id=%s AND user_id=%s
-            """,
-            (conversation_id, user["id"]),
-        )
-        exists = await cur.fetchone()
-
-    if not exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found",
-        )
-
     try:
-        async with conn.cursor() as cur:
-            # Clean up documents associated with this conversation
-            await cur.execute(
-                "DELETE FROM documents WHERE conversation_id=%s",
-                (conversation_id,),
-            )
-            # Cascade handles chats deletion automatically
-            await cur.execute(
-                "DELETE FROM conversations WHERE id=%s",
-                (conversation_id,),
-            )
-            logger.info(
-                f"Conversation {conversation_id} deleted for user {user['id']}"
+        async with conn.transaction():
+            # Match the advisory lock used by /chat/ask. The transaction lock
+            # waits for an active chat request and prevents a new one starting
+            # until this deletion commits.
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                (str(conversation_id),),
             )
 
-    except Exception:
-        logger.exception(
-            f"Failed to delete conversation {conversation_id}"
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT id FROM conversations
+                    WHERE id=%s AND user_id=%s
+                    FOR UPDATE
+                    """,
+                    (conversation_id, user["id"]),
+                )
+                exists = await cur.fetchone()
+
+                if not exists:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Conversation not found",
+                    )
+
+                await cur.execute(
+                    "DELETE FROM documents WHERE conversation_id=%s",
+                    (conversation_id,),
+                )
+                await cur.execute(
+                    """
+                    DELETE FROM conversations
+                    WHERE id=%s AND user_id=%s
+                    """,
+                    (conversation_id, user["id"]),
+                )
+
+        logger.info(
+            "Conversation %s deleted for user %s",
+            conversation_id,
+            user["id"],
         )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to delete conversation %s", conversation_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Conversation deletion unsuccessful",
+            detail="Conversation deletion unsuccessful. Please try again.",
         )
 
     return DeleteResponse(message="Conversation deleted successfully")

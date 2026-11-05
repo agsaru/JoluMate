@@ -4,51 +4,95 @@ from dotenv import load_dotenv
 
 load_dotenv()
 BASE_URL = os.getenv("BACKEND_URL")
+REQUEST_TIMEOUT = (5, 120)
+
+
+def _request(session, method, path, retry_auth=True, **kwargs):
+    kwargs.setdefault("timeout", REQUEST_TIMEOUT)
+    response = session.request(method, f"{BASE_URL}{path}", **kwargs)
+
+    if response.status_code == 401 and retry_auth and path not in (
+        "/auth/login", "/auth/signup", "/auth/refresh", "/auth/logout"
+    ):
+        refresh_response = session.post(
+            f"{BASE_URL}/auth/refresh",
+            timeout=REQUEST_TIMEOUT,
+        )
+        if refresh_response.status_code == 200:
+            # Multipart uploads need their file stream rewound before retry.
+            for file_info in (kwargs.get("files") or {}).values():
+                file_obj = file_info[1] if isinstance(file_info, tuple) else file_info
+                if hasattr(file_obj, "seek"):
+                    file_obj.seek(0)
+            response = session.request(
+                method, f"{BASE_URL}{path}", **kwargs
+            )
+
+    return response
 
 
 def signup(session, name: str, email: str, password: str):
-    response = session.post(
-        f"{BASE_URL}/auth/signup",
-        json={"name": name, "email": email, "password": password}
+    return _request(
+        session,
+        "POST",
+        "/auth/signup",
+        json={"name": name, "email": email, "password": password},
+        retry_auth=False,
     )
-    return response
+
 
 def login(session, email: str, password: str):
-    response = session.post(
-        f"{BASE_URL}/auth/login",
-        json={"email": email, "password": password}
+    return _request(
+        session,
+        "POST",
+        "/auth/login",
+        json={"email": email, "password": password},
+        retry_auth=False,
     )
-    return response
+
 
 def get_me(session):
-    response = session.get(f"{BASE_URL}/auth/me")
-    return response
+    return _request(session, "GET", "/auth/me")
+
 
 def logout(session):
-    response = session.post(f"{BASE_URL}/auth/logout")
-    return response
+    return _request(session, "POST", "/auth/logout", retry_auth=False)
+
 
 def get_ans(session, message: str, conversation_id: str = None):
-    response = session.post(
-        f"{BASE_URL}/chat/ask",
-        json={"message": message, "conversation_id": conversation_id}
+    return _request(
+        session,
+        "POST",
+        "/chat/ask",
+        json={"message": message, "conversation_id": conversation_id},
     )
-    return response
+
 
 def get_chats(session, conversation_id: str):
-    response = session.get(f"{BASE_URL}/chat/{conversation_id}")
-    return response
+    return _request(session, "GET", f"/chat/{conversation_id}")
+
 
 def get_conversations(session):
-    response = session.get(f"{BASE_URL}/conversations")
-    return response
+    return _request(session, "GET", "/conversations")
+
+
 def delete_conversation(session, conversation_id: str):
-    response = session.post(
-        f"{BASE_URL}/conversations/delete", 
-        params={"conversation_id": conversation_id}
+    return _request(
+        session,
+        "POST",
+        "/conversations/delete",
+        params={"conversation_id": conversation_id},
     )
-    return response
+
+
 def upload_doc(session, file, conversation_id):
     files = {"file": (file.name, file, "application/pdf")}
     params = {"conversation_id": conversation_id}
-    return session.post(f"{BASE_URL}/chat/upload", files=files, params=params)
+    response = _request(
+        session,
+        "POST",
+        "/chat/upload",
+        files=files,
+        params=params,
+    )
+    return response
