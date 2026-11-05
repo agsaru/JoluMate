@@ -1,6 +1,6 @@
-# FILE: server/rag/utils.py
 import io
 import asyncio
+import os
 
 from pypdf import PdfReader
 from langchain_core.documents import Document
@@ -8,11 +8,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from configs.db import pool
 from logs.logging_config import logger
-import os
 
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
 DEFAULT_SEARCH_LIMIT = 5
+EMBEDDING_BATCH_SIZE = 64
 
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/text-embedding-004",
@@ -21,15 +21,10 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 
 async def process_pdf(file_bytes: bytes, user_id: str, conversation_id: str):
-    """Extract text from PDF, chunk it, embed each chunk, and store in the database.
-
-    All inserts are wrapped in a transaction so partial failures
-    don't leave orphaned chunks.
-    """
-    pdf_stream = io.BytesIO(file_bytes)
-
-    reader = PdfReader(pdf_stream)
+    """Extract, chunk, embed in bounded batches, and store a PDF atomically."""
+    reader = PdfReader(io.BytesIO(file_bytes))
     docs = []
+
     for i, page in enumerate(reader.pages):
         text = page.extract_text()
         if text:
@@ -40,31 +35,39 @@ async def process_pdf(file_bytes: bytes, user_id: str, conversation_id: str):
         return 0
 
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
     )
     splits = text_splitter.split_documents(docs)
+    contents = [split.page_content for split in splits]
 
-    # Use a transaction so all-or-nothing insertion
+    # Batch embeddings to reduce per-chunk network overhead without launching
+    # an unbounded number of concurrent provider requests.
+    vectors = []
+    for start in range(0, len(contents), EMBEDDING_BATCH_SIZE):
+        batch = contents[start:start + EMBEDDING_BATCH_SIZE]
+        batch_vectors = await asyncio.to_thread(embeddings.embed_documents, batch)
+        vectors.extend(batch_vectors)
+
+    # Store only after all embeddings succeeded, so provider failures cannot
+    # leave a partially indexed document in the knowledge base.
     async with pool.connection() as conn:
         async with conn.transaction():
             async with conn.cursor() as cur:
-                for split in splits:
-                    # Run synchronous embedding call in a thread to avoid
-                    # blocking the async event loop
-                    vector = await asyncio.to_thread(
-                        embeddings.embed_query, split.page_content
-                    )
+                for content, vector in zip(contents, vectors):
                     await cur.execute(
                         """
                         INSERT INTO documents (user_id, conversation_id, content, embedding)
                         VALUES (%s, %s, %s, %s)
                         """,
-                        (user_id, conversation_id, split.page_content, vector),
+                        (user_id, conversation_id, content, vector),
                     )
 
     logger.info(
-        f"Processed PDF: {len(splits)} chunks stored for user {user_id}, "
-        f"conversation {conversation_id}"
+        "Processed PDF: %s chunks stored for user %s, conversation %s",
+        len(splits),
+        user_id,
+        conversation_id,
     )
     return len(splits)
 
