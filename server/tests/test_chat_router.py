@@ -91,7 +91,7 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
 
     async def fake_process_pdf(content, user_id, value, filename):
         lock_states.append(("processed", value, filename))
-        return 1
+        return {"chunks_processed": 1, "pages_without_text": [2], "total_pages": 3}
 
     monkeypatch.setattr(router, "conversation_lock", fake_lock)
     monkeypatch.setattr(router, "process_pdf", fake_process_pdf)
@@ -107,6 +107,8 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
     )
 
     assert response.chunks_processed == 1
+    assert response.pages_without_text == [2]
+    assert "page(s) skipped" in response.message
     assert lock_states == [
         ("entered", conversation_id),
         ("processed", conversation_id, "sample.pdf"),
