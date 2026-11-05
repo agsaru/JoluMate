@@ -19,6 +19,11 @@ def _request(session, method, path, retry_auth=True, **kwargs):
             timeout=REQUEST_TIMEOUT,
         )
         if refresh_response.status_code == 200:
+            # Multipart uploads need their file stream rewound before retry.
+            for file_info in (kwargs.get("files") or {}).values():
+                file_obj = file_info[1] if isinstance(file_info, tuple) else file_info
+                if hasattr(file_obj, "seek"):
+                    file_obj.seek(0)
             response = session.request(
                 method, f"{BASE_URL}{path}", **kwargs
             )
