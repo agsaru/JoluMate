@@ -72,20 +72,27 @@ async def process_pdf(
     reader = PdfReader(io.BytesIO(file_bytes))
     filename = os.path.basename(filename.replace("\\", "/")) or "uploaded.pdf"
     docs = []
+    pages_without_text = []
 
     for i, page in enumerate(reader.pages):
         text = page.extract_text()
-        if text:
+        if text and text.strip():
             docs.append(
                 Document(
                     page_content=text,
                     metadata={"filename": filename, "page_number": i + 1},
                 )
             )
+        else:
+            pages_without_text.append(i + 1)
 
     if not docs:
         logger.warning("PDF contained no extractable text")
-        return 0
+        return {
+            "chunks_processed": 0,
+            "pages_without_text": pages_without_text,
+            "total_pages": len(reader.pages),
+        }
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,
@@ -145,7 +152,11 @@ async def process_pdf(
         user_id,
         conversation_id,
     )
-    return len(splits)
+    return {
+        "chunks_processed": len(splits),
+        "pages_without_text": pages_without_text,
+        "total_pages": len(reader.pages),
+    }
 
 
 async def retrieve_documents(
@@ -232,6 +243,7 @@ async def retrieve_documents(
     )
     results = await asyncio.to_thread(ensemble_retriever.invoke, query)
 
+    reranking_succeeded = False
     if RERANKING_ENABLED and results:
         try:
             reranked = await asyncio.to_thread(
@@ -241,21 +253,23 @@ async def retrieve_documents(
                 limit,
             )
             results = list(reranked)
+            reranking_succeeded = True
         except Exception:
             logger.exception("Document reranking failed; using the hybrid ranking")
 
     if MIN_RELEVANCE_SCORE is not None:
-        if results and any("relevance_score" in document.metadata for document in results):
-            results = [
-                document
-                for document in results
-                if document.metadata.get("relevance_score", 0.0) >= MIN_RELEVANCE_SCORE
-            ]
-        else:
+        if not reranking_succeeded:
             logger.warning(
                 "RAG_MIN_RELEVANCE_SCORE is set, but reranker scores are unavailable; "
-                "skipping relevance filtering"
+                "returning no context"
             )
+            return []
+
+        results = [
+            document
+            for document in results
+            if document.metadata.get("relevance_score", -1.0) >= MIN_RELEVANCE_SCORE
+        ]
 
     return results[:limit]
 
