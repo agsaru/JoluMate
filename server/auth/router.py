@@ -3,7 +3,7 @@ import re
 
 from fastapi import APIRouter, HTTPException, Depends, Response, Cookie, status
 from pydantic import BaseModel, EmailStr, field_validator
-from datetime import datetime, timezone
+from psycopg.errors import UniqueViolation
 from dotenv import load_dotenv
 
 from configs.db import get_conn
@@ -22,6 +22,7 @@ load_dotenv()
 IS_PRODUCTION = os.getenv("IS_PRODUCTION", "false").lower() == "true"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 class SignUpData(BaseModel):
     name: str
@@ -44,24 +45,10 @@ class LoginData(BaseModel):
     email: EmailStr
     password: str
 
+
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(data: SignUpData, conn=Depends(get_conn)):
-    async with conn.cursor() as cur:
-        await cur.execute(
-            "SELECT 1 FROM users WHERE email=%s",
-            (data.email,),
-        )
-        user = await cur.fetchone()
-
-    if user:
-        logger.warning(f"Signup failed: email exists {data.email}")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Email already exists",
-        )
-
     hashed = hash_password(data.password)
-
     try:
         await conn.execute(
             """
@@ -70,18 +57,24 @@ async def signup(data: SignUpData, conn=Depends(get_conn)):
             """,
             (data.name, data.email, hashed),
         )
-        logger.info(f"User created successfully: {data.email}")
-        return {"message": "User Created"}
-
+    except UniqueViolation:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists",
+        )
     except Exception:
         logger.exception("Signup failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="System error",
+            detail="We couldn't create your account. Please try again.",
         )
 
+    logger.info("User created successfully: %s", data.email)
+    return {"message": "User created"}
+
+
 @router.post("/login")
-async def login(data: LoginData,response:Response, conn=Depends(get_conn)):
+async def login(data: LoginData, response: Response, conn=Depends(get_conn)):
     async with conn.cursor() as cur:
         await cur.execute(
             "SELECT id, hashed_password FROM users WHERE email=%s",
@@ -99,10 +92,7 @@ async def login(data: LoginData,response:Response, conn=Depends(get_conn)):
     refresh_token = create_refresh_token()
 
     await store_refresh_token(
-        conn,
-        str(user["id"]),
-        refresh_token,
-        refresh_token_expiry(),
+        conn, str(user["id"]), refresh_token, refresh_token_expiry()
     )
     response.set_cookie(
         key="access_token",
@@ -120,10 +110,8 @@ async def login(data: LoginData,response:Response, conn=Depends(get_conn)):
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
+    return {"message": "Login successful"}
 
-    return {
-        "access_token": access_token
-    }
 
 @router.post("/refresh")
 async def refresh(
@@ -134,37 +122,29 @@ async def refresh(
     if not refresh_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing refresh token")
 
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT user_id, expires_at
-            FROM refresh_tokens
-            WHERE token=%s
-            """,
-            (refresh_token,),
+    async with conn.transaction():
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                DELETE FROM refresh_tokens
+                WHERE token = %s AND expires_at > NOW()
+                RETURNING user_id
+                """,
+                (refresh_token,),
+            )
+            data = await cur.fetchone()
+
+        if not data:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "Invalid or expired refresh token",
+            )
+
+        new_access = create_token(str(data["user_id"]))
+        new_refresh = create_refresh_token()
+        await store_refresh_token(
+            conn, str(data["user_id"]), new_refresh, refresh_token_expiry()
         )
-        data = await cur.fetchone()
-
-    if not data:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
-
-    if data["expires_at"] < datetime.now(timezone.utc):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh token expired")
-
-    await conn.execute(
-        "DELETE FROM refresh_tokens WHERE token=%s",
-        (refresh_token,),
-    )
-
-    new_access = create_token(str(data["user_id"]))
-    new_refresh = create_refresh_token()
-
-    await store_refresh_token(
-        conn,
-        str(data["user_id"]),
-        new_refresh,
-        refresh_token_expiry(),
-    )
 
     response.set_cookie(
         key="access_token",
@@ -182,8 +162,8 @@ async def refresh(
         samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
-
     return {"message": "Session refreshed"}
+
 
 @router.post("/logout")
 async def logout(
@@ -197,9 +177,12 @@ async def logout(
             (refresh_token,),
         )
 
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
-
+    response.delete_cookie(
+        "access_token", httponly=True, secure=IS_PRODUCTION, samesite="lax"
+    )
+    response.delete_cookie(
+        "refresh_token", httponly=True, secure=IS_PRODUCTION, samesite="lax"
+    )
     return {"message": "Logged out"}
 
 
