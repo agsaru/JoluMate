@@ -143,3 +143,67 @@ def test_pdf_provider_failure_is_not_reported_as_invalid_pdf(monkeypatch):
 
     assert error.value.status_code == 502
     assert "temporarily unavailable" in error.value.detail
+
+
+def test_pdf_with_no_searchable_text_is_rejected(monkeypatch):
+    conversation_id = str(uuid4())
+    connection = FakeConnection([{"id": conversation_id}])
+
+    @asynccontextmanager
+    async def fake_lock(value):
+        yield
+
+    async def fake_process_pdf(content, user_id, value, filename):
+        return {
+            "chunks_processed": 0,
+            "pages_without_text": [1, 2],
+            "total_pages": 2,
+        }
+
+    monkeypatch.setattr(router, "conversation_lock", fake_lock)
+    monkeypatch.setattr(router, "process_pdf", fake_process_pdf)
+
+    with pytest.raises(HTTPException) as error:
+        run(
+            router.upload_file(
+                request=None,
+                conversation_id=conversation_id,
+                file=FakeFile(),
+                conn=connection,
+                user={"id": str(uuid4())},
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert "No searchable text" in error.value.detail
+
+
+def test_password_protected_pdf_has_clear_error(monkeypatch):
+    from pypdf.errors import FileNotDecryptedError
+
+    conversation_id = str(uuid4())
+    connection = FakeConnection([{"id": conversation_id}])
+
+    @asynccontextmanager
+    async def fake_lock(value):
+        yield
+
+    async def fake_process_pdf(content, user_id, value, filename):
+        raise FileNotDecryptedError("PDF is encrypted")
+
+    monkeypatch.setattr(router, "conversation_lock", fake_lock)
+    monkeypatch.setattr(router, "process_pdf", fake_process_pdf)
+
+    with pytest.raises(HTTPException) as error:
+        run(
+            router.upload_file(
+                request=None,
+                conversation_id=conversation_id,
+                file=FakeFile(),
+                conn=connection,
+                user={"id": str(uuid4())},
+            )
+        )
+
+    assert error.value.status_code == 422
+    assert "password-protected" in error.value.detail
