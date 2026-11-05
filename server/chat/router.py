@@ -17,6 +17,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 # --- Constants ---
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_MESSAGE_LENGTH = 4000
 PDF_MAGIC_BYTES = b"%PDF"
 MAX_TITLE_LENGTH = 40
 
@@ -93,6 +94,12 @@ async def get_ans(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Query cannot be empty",
+        )
+
+    if len(message) > MAX_MESSAGE_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Message too long. Maximum length is {MAX_MESSAGE_LENGTH} characters.",
         )
 
     conversation_id = data.conversation_id
@@ -284,7 +291,7 @@ async def upload_file(
     if not chunks:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No searchable text was found in this PDF. Scanned PDFs may need OCR before uploading.",
+            detail="No searchable text was found in this PDF. Scanned or image-only PDFs are not supported.",
         )
 
     return UploadResponse(
