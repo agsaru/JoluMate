@@ -48,8 +48,8 @@ def test_hybrid_retrieval_scopes_both_searches_to_user_and_conversation(monkeypa
     vector_rows = [
         {
             "id": 1,
-            "content": "Annual leave policy details",
-            "filename": "handbook.pdf",
+            "content": "Photosynthesis converts light energy into chemical energy",
+            "filename": "biology_notes.pdf",
             "page_number": 3,
             "chunk_index": 0,
             "start_index": 0,
@@ -58,8 +58,8 @@ def test_hybrid_retrieval_scopes_both_searches_to_user_and_conversation(monkeypa
     all_rows = vector_rows + [
         {
             "id": 2,
-            "content": "Employees can request sick leave",
-            "filename": "handbook.pdf",
+            "content": "Cellular respiration releases energy from glucose",
+            "filename": "biology_notes.pdf",
             "page_number": 5,
             "chunk_index": 1,
             "start_index": 1000,
@@ -72,7 +72,7 @@ def test_hybrid_retrieval_scopes_both_searches_to_user_and_conversation(monkeypa
 
     results = asyncio.run(
         utils.retrieve_documents(
-            "annual leave",
+            "photosynthesis",
             "user-123",
             "conversation-456",
         )
@@ -93,18 +93,18 @@ def test_search_documents_includes_filename_and_page_citations(monkeypatch):
     async def fake_retrieve_documents(query, user_id, conversation_id, limit):
         return [
             Document(
-                page_content="Employees receive annual leave.",
-                metadata={"filename": "handbook.pdf", "page_number": 7},
+                page_content="Employees receive photosynthesis.",
+                metadata={"filename": "biology_notes.pdf", "page_number": 7},
             )
         ]
 
     monkeypatch.setattr(utils, "retrieve_documents", fake_retrieve_documents)
 
     result = asyncio.run(
-        utils.search_documents("annual leave", "user-123", "conversation-456")
+        utils.search_documents("photosynthesis", "user-123", "conversation-456")
     )
 
     assert result == (
-        "[Source: handbook.pdf, page 7]\n"
-        "Employees receive annual leave."
+        "[Source: biology_notes.pdf, page 7]\n"
+        "Employees receive photosynthesis."
     )
