@@ -7,21 +7,21 @@ def test_retrieval_metrics_use_unique_filename_and_page_sources():
     results = [
         Document(
             page_content="First chunk",
-            metadata={"filename": "policy.pdf", "page_number": 4},
+            metadata={"filename": "biology_notes.pdf", "page_number": 4},
         ),
         Document(
             page_content="Second chunk from same page",
-            metadata={"filename": "policy.pdf", "page_number": 4},
+            metadata={"filename": "biology_notes.pdf", "page_number": 4},
         ),
         Document(
             page_content="Another source",
-            metadata={"filename": "handbook.pdf", "page_number": 2},
+            metadata={"filename": "chemistry_notes.pdf", "page_number": 2},
         ),
     ]
 
     metrics = calculate_retrieval_metrics(
         results,
-        expected_sources=["policy.pdf#4", "handbook.pdf#2"],
+        expected_sources=["biology_notes.pdf#4", "chemistry_notes.pdf#2"],
         k=5,
     )
 
@@ -32,13 +32,13 @@ def test_retrieval_metrics_return_zero_when_no_expected_source_is_found():
     results = [
         Document(
             page_content="Unrelated chunk",
-            metadata={"filename": "policy.pdf", "page_number": 1},
+            metadata={"filename": "biology_notes.pdf", "page_number": 1},
         )
     ]
 
     metrics = calculate_retrieval_metrics(
         results,
-        expected_sources=["policy.pdf#8"],
+        expected_sources=["biology_notes.pdf#8"],
         k=5,
     )
 
