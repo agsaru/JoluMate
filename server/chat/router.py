@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
+from uuid import UUID
 from langchain_core.messages import HumanMessage
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -63,6 +64,16 @@ def generate_title(text: str) -> str:
     return truncated.rstrip() + "…"
 
 
+def validate_conversation_id(conversation_id: str) -> str:
+    try:
+        return str(UUID(conversation_id))
+    except (AttributeError, TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid conversation_id",
+        )
+
+
 @asynccontextmanager
 async def conversation_lock(conversation_id: str):
     """Serialize operations on one conversation across API workers."""
@@ -120,6 +131,8 @@ async def get_ans(
             logger.info(
                 f"Conversation created {conversation_id} for user {user['id']}"
             )
+    else:
+        conversation_id = validate_conversation_id(conversation_id)
 
     async with conversation_lock(conversation_id):
         # Recheck ownership after acquiring the lock. The conversation may
@@ -196,7 +209,24 @@ async def get_chat_history(
     conn=Depends(get_conn),
     user=Depends(get_user),
 ):
+    conversation_id = validate_conversation_id(conversation_id)
+
     async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id FROM conversations
+            WHERE id=%s AND user_id=%s
+            """,
+            (conversation_id, user["id"]),
+        )
+        conversation = await cur.fetchone()
+
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
         await cur.execute(
             """
             SELECT chats.role, chats.content, chats.created_at
@@ -237,21 +267,7 @@ async def upload_file(
             detail="conversation_id required",
         )
 
-    async with conn.cursor() as cur:
-        await cur.execute(
-            """
-            SELECT id FROM conversations
-            WHERE id=%s AND user_id=%s
-            """,
-            (conversation_id, user["id"]),
-        )
-        conversation = await cur.fetchone()
-
-    if not conversation:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Conversation not found",
-        )
+    conversation_id = validate_conversation_id(conversation_id)
 
     if file.content_type != "application/pdf":
         raise HTTPException(
@@ -279,14 +295,33 @@ async def upload_file(
             detail="File does not appear to be a valid PDF",
         )
 
-    try:
-        chunks = await process_pdf(bytes(file_content), user["id"], conversation_id)
-    except Exception:
-        logger.exception("PDF processing failed for conversation %s", conversation_id)
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="We couldn't read this PDF. Please check that it is a valid, text-based PDF.",
-        )
+    async with conversation_lock(conversation_id):
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT id FROM conversations
+                WHERE id=%s AND user_id=%s
+                """,
+                (conversation_id, user["id"]),
+            )
+            conversation = await cur.fetchone()
+
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found",
+            )
+
+        try:
+            chunks = await process_pdf(bytes(file_content), user["id"], conversation_id)
+        except Exception:
+            logger.exception(
+                "PDF processing failed for conversation %s", conversation_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="We couldn't read this PDF. Please check that it is a valid, text-based PDF.",
+            )
 
     if not chunks:
         raise HTTPException(

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from datetime import datetime
+from uuid import UUID
 from configs.db import get_conn
 from auth.auth import get_user
 from logs.logging_config import logger
@@ -16,6 +17,16 @@ class ConversationItem(BaseModel):
 
 class DeleteResponse(BaseModel):
     message: str
+
+
+def validate_conversation_id(conversation_id: str) -> str:
+    try:
+        return str(UUID(conversation_id))
+    except (AttributeError, TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid conversation_id",
+        )
 
 
 @router.get("", response_model=list[ConversationItem])
@@ -58,6 +69,8 @@ async def delete_conversation(
     conn=Depends(get_conn),
     user=Depends(get_user),
 ):
+    conversation_id = validate_conversation_id(conversation_id)
+
     try:
         async with conn.transaction():
             # Match the advisory lock used by /chat/ask. The transaction lock
