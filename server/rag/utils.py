@@ -180,7 +180,6 @@ async def retrieve_documents(
             )
             vector_results = await cur.fetchall()
 
-            # BM25 must use the same conversation scope as vector search.
             await cur.execute(
                 """
                 SELECT id, content, filename, page_number, chunk_index, start_index
