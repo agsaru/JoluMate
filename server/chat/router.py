@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, status, File, Depends, HTTPException, Request, Query
+from pypdf.errors import PdfReadError
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
@@ -313,14 +314,25 @@ async def upload_file(
             )
 
         try:
-            chunks = await process_pdf(bytes(file_content), user["id"], conversation_id)
-        except Exception:
-            logger.exception(
-                "PDF processing failed for conversation %s", conversation_id
+            chunks = await process_pdf(
+                bytes(file_content),
+                user["id"],
+                conversation_id,
+                file.filename or "uploaded.pdf",
             )
+        except PdfReadError:
+            logger.info("Invalid or unreadable PDF for conversation %s", conversation_id)
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="We couldn't read this PDF. Please check that it is a valid, text-based PDF.",
+            )
+        except Exception:
+            logger.exception(
+                "Document processing failed for conversation %s", conversation_id
+            )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Document processing is temporarily unavailable. Please try again.",
             )
 
     if not chunks:

@@ -53,7 +53,12 @@ CREATE TABLE documents (
     user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding vector(768)
+    embedding vector(768),
+    filename TEXT,
+    page_number INTEGER,
+    chunk_index INTEGER,
+    start_index INTEGER,
+    embedding_model TEXT NOT NULL DEFAULT 'gemini-embedding-001'
 );
 
 -- Vector similarity index for RAG search (IVFFlat with cosine distance)
@@ -63,3 +68,5 @@ CREATE INDEX idx_documents_embedding ON documents
 
 -- Index for filtering documents by user + conversation before vector search
 CREATE INDEX idx_documents_user_conversation ON documents (user_id, conversation_id);
+CREATE INDEX idx_documents_embedding_model
+    ON documents (user_id, conversation_id, embedding_model);

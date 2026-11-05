@@ -39,6 +39,7 @@ class FakeConnection:
 
 class FakeFile:
     content_type = "application/pdf"
+    filename = "sample.pdf"
 
     def __init__(self):
         self.consumed = False
@@ -88,8 +89,8 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
         yield
         lock_states.append(("exited", value))
 
-    async def fake_process_pdf(content, user_id, value):
-        lock_states.append(("processed", value))
+    async def fake_process_pdf(content, user_id, value, filename):
+        lock_states.append(("processed", value, filename))
         return 1
 
     monkeypatch.setattr(router, "conversation_lock", fake_lock)
@@ -108,6 +109,35 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
     assert response.chunks_processed == 1
     assert lock_states == [
         ("entered", conversation_id),
-        ("processed", conversation_id),
+        ("processed", conversation_id, "sample.pdf"),
         ("exited", conversation_id),
     ]
+
+
+def test_pdf_provider_failure_is_not_reported_as_invalid_pdf(monkeypatch):
+    conversation_id = str(uuid4())
+    connection = FakeConnection([{"id": conversation_id}])
+
+    @asynccontextmanager
+    async def fake_lock(value):
+        yield
+
+    async def fake_process_pdf(content, user_id, value, filename):
+        raise RuntimeError("embedding provider unavailable")
+
+    monkeypatch.setattr(router, "conversation_lock", fake_lock)
+    monkeypatch.setattr(router, "process_pdf", fake_process_pdf)
+
+    with pytest.raises(HTTPException) as error:
+        run(
+            router.upload_file(
+                request=None,
+                conversation_id=conversation_id,
+                file=FakeFile(),
+                conn=connection,
+                user={"id": str(uuid4())},
+            )
+        )
+
+    assert error.value.status_code == 502
+    assert "temporarily unavailable" in error.value.detail

@@ -53,8 +53,7 @@ HTTP requests for monitoring and debugging.
 *   **AI Frameworks**: LangChain, LangGraph
 *   **LLM Provider**: Groq
 *   **LLM Model**: `llama-3.3-70b-versatile`
-*   **Embedding Model**: Google Generative AI
-(`models/text-embedding-004`)
+*   **Embedding Model**: Google Gemini Embeddings (`gemini-embedding-001`, 768 dimensions)
 *   **Authentication**: JWT (JSON Web Tokens), `passlib` (bcrypt)
 *   **HTTP Client**: `requests`
 *   **PDF Processing**: `pypdf`
@@ -173,6 +172,8 @@ psql -U your_username -d your_database_name -f db/formatting.sql
 Replace `your_username` and `your_database_name` with your       
 PostgreSQL credentials.
 
+**Important:** `db/formatting.sql` is a destructive bootstrap script that drops and recreates tables. Use it only for a fresh database. For an existing database, apply the non-destructive migration described below.
+
 ### 5. Run the Backend Server
 
 Navigate to the `server/` directory and start the FastAPI        
@@ -195,6 +196,47 @@ streamlit run app.py
 ```
 The Streamlit app will open in your web browser, usually at      
 `http://localhost:8501`.
+
+### Existing database migration
+
+Apply the non-destructive metadata migration to an existing database:
+
+```bash
+psql -U your_username -d your_database_name -f db/migrations/002_document_metadata_and_embedding_model.sql
+```
+
+Install the updated server dependencies, then re-embed existing chunks:
+
+```bash
+cd server
+pip install -r requirements.txt
+python scripts/reembed_documents.py
+```
+
+The re-embedding script processes chunks in batches and can be rerun after an interruption. Existing chunks without filename/page metadata remain searchable, but their original source locations cannot be reconstructed automatically. New uploads retain filename and page metadata for citations.
+
+### Reranking and relevance filtering
+
+Hybrid retrieval is followed by a local FlashRank cross-encoder reranker. The small `ms-marco-MiniLM-L-6-v2` model is downloaded on first use; if it cannot load, JoluMate falls back to the hybrid ranking. Set `RAG_RERANKING_ENABLED=false` to disable reranking.
+
+Relevance filtering is disabled by default because its score threshold should be calibrated against your own evaluation questions. After collecting evaluation results, you can set `RAG_MIN_RELEVANCE_SCORE` to a value between 0 and 1.
+
+### Retrieval evaluation
+
+Create a JSONL file with one query per line. Each expected source uses the format `filename.pdf#page_number`:
+
+```json
+{"query": "What is the leave policy?", "expected_sources": ["employee-handbook.pdf#12"]}
+```
+
+Set `RAG_EVAL_USER_ID`, `RAG_EVAL_CONVERSATION_ID`, and optionally `RAG_EVAL_DATASET`, then run:
+
+```bash
+cd server
+python scripts/evaluate_retrieval.py
+```
+
+The runner reports Recall@5 and MRR@5. Add questions with known supporting pages before using these metrics to tune retrieval thresholds or weights.
 
 ## Usage
 
