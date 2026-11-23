@@ -1,6 +1,7 @@
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
 
+from rag.guardrails import validate_search_query
 from rag.utils import search_documents
 
 
@@ -11,12 +12,10 @@ async def search_knowledge_base(query: str, config: RunnableConfig) -> str:
     Use this for questions about their contents and related follow-ups.
     The search is restricted to the current conversation.
     """
-    query = query.strip()
-    if not query:
-        return "No search query was provided."
-
-    if len(query) > 4000:
-        return "The search query is too long. Please ask a shorter question."
+    try:
+        query = validate_search_query(query)
+    except ValueError as error:
+        return str(error)
 
     configurable = config.get("configurable", {})
     user_id = configurable.get("user_id")
