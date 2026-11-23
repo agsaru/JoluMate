@@ -132,3 +132,26 @@ def test_source_extraction_ignores_unrelated_lines():
     assert extract_retrieved_sources("ordinary text\n[Source: notes.pdf, page 8]") == {
         ("notes.pdf", "8")
     }
+
+
+
+def test_citation_validation_does_not_accept_sources_from_earlier_turns():
+    # The caller must pass only the latest ToolMessage, not the full conversation.
+    previous_turn_context = "[Source: biology.pdf, page 3]\nCell structure..."
+    current_turn_context = "[Source: chemistry.pdf, page 2]\nChemical bonds..."
+
+    result = validate_answer_citations(
+        "Cells have membranes [Source: biology.pdf, page 3].",
+        current_turn_context,
+        require_citations=True,
+    )
+
+    assert result["valid"] is False
+    assert result["unsupported_sources"] == [("biology.pdf", "3")]
+
+
+def test_empty_retrieval_has_no_verifiable_sources():
+    assert extract_retrieved_sources("") == set()
+    assert extract_retrieved_sources(
+        "No relevant information was found in the uploaded study materials."
+    ) == set()
