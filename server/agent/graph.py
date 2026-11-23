@@ -9,7 +9,6 @@ from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from configs.db import pool
 from rag.tools import search_knowledge_base
 from rag.guardrails import extract_retrieved_sources, validate_answer_citations
 
