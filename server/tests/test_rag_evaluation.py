@@ -118,6 +118,16 @@ def test_citation_validation_reports_when_answer_has_no_citations():
     assert result["has_citations"] is False
 
 
+def test_required_citation_is_rejected_when_retrieved_sources_exist():
+    result = validate_answer_citations(
+        "An uncited answer.",
+        "[Source: biology.pdf, page 3]",
+        require_citations=True,
+    )
+    assert result["valid"] is False
+    assert result["missing_citations"] is True
+
+
 def test_source_extraction_ignores_unrelated_lines():
     assert extract_retrieved_sources("ordinary text\n[Source: notes.pdf, page 8]") == {
         ("notes.pdf", "8")
