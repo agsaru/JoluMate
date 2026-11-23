@@ -25,10 +25,8 @@ def validate_search_query(query: str, max_length: int = MAX_SEARCH_QUERY_LENGTH)
     normalized = query.strip()
     if not normalized:
         raise ValueError("Search query cannot be empty.")
-
     if len(normalized) > max_length:
         raise ValueError(f"Search query cannot exceed {max_length} characters.")
-
     if any(ord(char) < 32 and char not in "\t\n\r" for char in normalized):
         raise ValueError("Search query contains unsupported control characters.")
 
@@ -49,10 +47,15 @@ def extract_retrieved_sources(context: str) -> set[tuple[str, str]]:
     }
 
 
-def validate_answer_citations(answer: str, retrieved_context: str) -> dict:
-    """Check that every explicit answer citation exists in retrieved context.
+def validate_answer_citations(
+    answer: str,
+    retrieved_context: str,
+    require_citations: bool = False,
+) -> dict:
+    """Check citation references against retrieved sources, without an LLM.
 
-    This is a reference-integrity check, not a semantic faithfulness check.
+    This verifies reference integrity only; it cannot prove that claims are
+    entailed by the cited passages.
     """
     if not isinstance(answer, str):
         raise ValueError("Answer must be a string.")
@@ -63,10 +66,12 @@ def validate_answer_citations(answer: str, retrieved_context: str) -> dict:
         for match in _CITATION_RE.finditer(answer)
     }
     unsupported = sorted(cited - available)
+    missing_required_citation = require_citations and bool(available) and not cited
 
     return {
-        "valid": not unsupported,
+        "valid": not unsupported and not missing_required_citation,
         "has_citations": bool(cited),
         "cited_sources": sorted(cited),
         "unsupported_sources": unsupported,
+        "missing_citations": missing_required_citation,
     }
