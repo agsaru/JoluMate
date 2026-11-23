@@ -82,7 +82,7 @@ def test_search_query_validation_normalizes_input():
     assert validate_search_query("  explain this  ") == "explain this"
 
 
-@pytest.mark.parametrize("query", ["", "  ", "a" * 4001, "bad\\x00query", None])
+@pytest.mark.parametrize("query", ["", "  ", "a" * 4001, "bad\x00query", None])
 def test_search_query_validation_rejects_invalid_input(query):
     with pytest.raises(ValueError):
         validate_search_query(query)
@@ -90,8 +90,8 @@ def test_search_query_validation_rejects_invalid_input(query):
 
 def test_citation_validation_accepts_only_sources_present_in_retrieved_context():
     context = (
-        "[Source: biology.pdf, page 3]\\nCell structure...\\n"
-        "[Source: chemistry.pdf, page 2]\\nChemical bonds..."
+        "[Source: biology.pdf, page 3]\nCell structure...\n"
+        "[Source: chemistry.pdf, page 2]\nChemical bonds..."
     )
     result = validate_answer_citations(
         "Cells have membranes [Source: biology.pdf, page 3]. "
@@ -106,7 +106,7 @@ def test_citation_validation_accepts_only_sources_present_in_retrieved_context()
 def test_citation_validation_flags_fabricated_or_unretrieved_sources():
     result = validate_answer_citations(
         "Claim [Source: invented.pdf, page 99].",
-        "[Source: biology.pdf, page 3]\\nRetrieved text",
+        "[Source: biology.pdf, page 3]\nRetrieved text",
     )
     assert result["valid"] is False
     assert result["unsupported_sources"] == [("invented.pdf", "99")]
@@ -119,6 +119,6 @@ def test_citation_validation_reports_when_answer_has_no_citations():
 
 
 def test_source_extraction_ignores_unrelated_lines():
-    assert extract_retrieved_sources("ordinary text\\n[Source: notes.pdf, page 8]") == {
+    assert extract_retrieved_sources("ordinary text\n[Source: notes.pdf, page 8]") == {
         ("notes.pdf", "8")
     }
