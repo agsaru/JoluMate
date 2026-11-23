@@ -137,7 +137,6 @@ def test_source_extraction_ignores_unrelated_lines():
 
 def test_citation_validation_does_not_accept_sources_from_earlier_turns():
     # The caller must pass only the latest ToolMessage, not the full conversation.
-    previous_turn_context = "[Source: biology.pdf, page 3]\nCell structure..."
     current_turn_context = "[Source: chemistry.pdf, page 2]\nChemical bonds..."
 
     result = validate_answer_citations(
