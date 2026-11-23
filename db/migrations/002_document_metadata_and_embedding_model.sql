@@ -7,7 +7,7 @@ ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS chunk_index INTEGER,
     ADD COLUMN IF NOT EXISTS start_index INTEGER,
     ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL
-        DEFAULT 'models/text-embedding-004';
+        DEFAULT 'gemini-embedding-001';
 
 CREATE INDEX IF NOT EXISTS idx_documents_embedding_model
     ON documents (user_id, conversation_id, embedding_model);

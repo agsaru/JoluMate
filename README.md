@@ -278,7 +278,7 @@ Configured within the server code:
 tokens (in minutes). Defined in `server/auth/auth.py`.
 *   `REFRESH_TOKEN_DAYS`: Lifetime duration for refresh tokens   
 (in days). Defined in `server/auth/auth.py`.
-*   `EMBEDDINGS_MODEL`: Specifies `models/text-embedding-004` as 
+*   `EMBEDDING_MODEL`: Specifies `gemini-embedding-001` as
 the embedding model for Google Generative AI. Defined in
 `server/rag/utils.py`.
 *   `CHUNK_SIZE`: The maximum character size for text chunks     
@@ -396,7 +396,7 @@ processing and vector search. It extracts text from PDF files
 using `pypdf`, splits the text into overlapping chunks using     
 `RecursiveCharacterTextSplitter`, generates vector embeddings for
 each chunk using `GoogleGenerativeAIEmbeddings` (with
-`models/text-embedding-004`), and stores these in the `documents`
+`gemini-embedding-001`), and stores these in the `documents`
 table. It also provides the `search_documents` function, which   
 performs a cosine similarity search on stored embeddings in      
 PostgreSQL to retrieve relevant document content for a given     
