@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from chat import router
 
@@ -55,6 +56,25 @@ def run(coroutine):
     return asyncio.run(coroutine)
 
 
+def make_request(path="/chat/upload"):
+    """Build the minimal ASGI request required by SlowAPI's route wrapper."""
+    return Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode(),
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+            "server": ("testserver", 80),
+        }
+    )
+
+
 def test_invalid_conversation_id_returns_bad_request():
     with pytest.raises(HTTPException) as error:
         router.validate_conversation_id("not-a-uuid")
@@ -98,7 +118,7 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
 
     response = run(
         router.upload_file(
-            request=None,
+            request=make_request(),
             conversation_id=conversation_id,
             file=FakeFile(),
             conn=connection,
@@ -133,7 +153,7 @@ def test_pdf_provider_failure_is_not_reported_as_invalid_pdf(monkeypatch):
     with pytest.raises(HTTPException) as error:
         run(
             router.upload_file(
-                request=None,
+                request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
                 conn=connection,
@@ -166,7 +186,7 @@ def test_pdf_with_no_searchable_text_is_rejected(monkeypatch):
     with pytest.raises(HTTPException) as error:
         run(
             router.upload_file(
-                request=None,
+                request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
                 conn=connection,
@@ -197,7 +217,7 @@ def test_password_protected_pdf_has_clear_error(monkeypatch):
     with pytest.raises(HTTPException) as error:
         run(
             router.upload_file(
-                request=None,
+                request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
                 conn=connection,
