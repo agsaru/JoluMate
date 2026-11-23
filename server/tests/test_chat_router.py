@@ -56,6 +56,11 @@ def run(coroutine):
     return asyncio.run(coroutine)
 
 
+def upload_file_without_rate_limit(**kwargs):
+    """Exercise upload endpoint logic without the HTTP rate-limit wrapper."""
+    return router.upload_file.__wrapped__(**kwargs)
+
+
 def make_request(path="/chat/upload"):
     """Build the minimal ASGI request required by SlowAPI's route wrapper."""
     return Request(
@@ -117,7 +122,7 @@ def test_pdf_processing_holds_conversation_lock(monkeypatch):
     monkeypatch.setattr(router, "process_pdf", fake_process_pdf)
 
     response = run(
-        router.upload_file(
+        upload_file_without_rate_limit(
             request=make_request(),
             conversation_id=conversation_id,
             file=FakeFile(),
@@ -152,7 +157,7 @@ def test_pdf_provider_failure_is_not_reported_as_invalid_pdf(monkeypatch):
 
     with pytest.raises(HTTPException) as error:
         run(
-            router.upload_file(
+            upload_file_without_rate_limit(
                 request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
@@ -185,7 +190,7 @@ def test_pdf_with_no_searchable_text_is_rejected(monkeypatch):
 
     with pytest.raises(HTTPException) as error:
         run(
-            router.upload_file(
+            upload_file_without_rate_limit(
                 request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
@@ -216,7 +221,7 @@ def test_password_protected_pdf_has_clear_error(monkeypatch):
 
     with pytest.raises(HTTPException) as error:
         run(
-            router.upload_file(
+            upload_file_without_rate_limit(
                 request=make_request(),
                 conversation_id=conversation_id,
                 file=FakeFile(),
