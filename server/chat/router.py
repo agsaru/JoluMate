@@ -11,7 +11,7 @@ from slowapi.util import get_remote_address
 from configs.db import get_conn, pool
 from auth.auth import get_user
 from logs.logging_config import logger
-from agent.graph import workflow
+import agent.graph as agent_graph
 from rag.utils import process_pdf
 
 limiter = Limiter(key_func=get_remote_address)
@@ -167,7 +167,7 @@ async def get_ans(
         }
 
         try:
-            final_state = await workflow.ainvoke(
+            final_state = await agent_graph.workflow.ainvoke(
                 {"messages": [HumanMessage(content=message)]},
                 config=config,
             )
