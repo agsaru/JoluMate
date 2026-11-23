@@ -116,7 +116,7 @@ RESPONSE STYLE
     # Deterministically verify citation references after document-grounded answers.
     # This does not score semantic faithfulness or make another model/API call.
     if state["route"] == "documents" and isinstance(last_message, ToolMessage):
-        retrieved_context = "\\n".join(
+        retrieved_context = "\n".join(
             message.content
             for message in state["messages"]
             if isinstance(message, ToolMessage) and isinstance(message.content, str)
