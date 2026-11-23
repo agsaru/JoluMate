@@ -4,7 +4,7 @@ from typing import Annotated, Literal, TypedDict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -12,6 +12,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from configs.db import pool
 from rag.tools import search_knowledge_base
+from rag.guardrails import extract_retrieved_sources, validate_answer_citations
 
 load_dotenv()
 
@@ -104,19 +105,62 @@ RESPONSE STYLE
 - Explain uncertainty instead of presenting unsupported claims as facts."""
     )
 
-    messages = [sys_msg] + state["messages"]
     last_message = state["messages"][-1]
+    is_document_retrieval_result = (
+        state["route"] == "documents" and isinstance(last_message, ToolMessage)
+    )
+
+    # Only the tool result produced for this turn may authorize citations.
+    # Historical ToolMessages belong to earlier questions and must not be reused.
+    retrieved_context = (
+        last_message.content
+        if is_document_retrieval_result and isinstance(last_message.content, str)
+        else ""
+    )
+
+    if is_document_retrieval_result and not extract_retrieved_sources(retrieved_context):
+        # Fail closed before answer generation when retrieval returned no usable
+        # source passages (including empty retrieval and tool/configuration errors).
+        return {
+            "messages": AIMessage(
+                content=(
+                    "I couldn't find relevant information in the uploaded study "
+                    "materials to answer this question. Please upload the relevant "
+                    "material or try a more specific question."
+                )
+            )
+        }
+
+    messages = [sys_msg] + state["messages"]
 
     if state["route"] == "documents" and not isinstance(last_message, ToolMessage):
         response = await document_llm.ainvoke(messages)
     else:
         response = await llm.ainvoke(messages)
 
+    # Deterministically verify citation references against this turn's retrieval
+    # result only. This checks reference integrity, not semantic entailment, and
+    # does not make another model/API call.
+    if is_document_retrieval_result and isinstance(response.content, str):
+        citation_check = validate_answer_citations(
+            response.content,
+            retrieved_context,
+            require_citations=True,
+        )
+        if not citation_check["valid"]:
+            response = AIMessage(
+                content=(
+                    "I couldn't verify the source citations for this answer against "
+                    "the retrieved study material, so I won't present it as a "
+                    "source-verified answer. Please ask again or upload the relevant "
+                    "material with clear page information."
+                )
+            )
+
     return {"messages": response}
 
 
 graph = StateGraph(ChatState)
-
 graph.add_node("route", route_node)
 graph.add_node("agent", agent_node)
 graph.add_node("tools", ToolNode(tools))
