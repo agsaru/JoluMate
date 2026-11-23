@@ -9,11 +9,11 @@ import re
 MAX_SEARCH_QUERY_LENGTH = 4000
 
 _SOURCE_LINE_RE = re.compile(
-    r"^\\[Source: (?P<filename>.+?), page (?P<page>\\d+|unknown)\\]$",
+    r"^\[Source: (?P<filename>.+?), page (?P<page>\d+|unknown)\]$",
     re.MULTILINE,
 )
 _CITATION_RE = re.compile(
-    r"\\[Source: (?P<filename>.+?), page (?P<page>\\d+|unknown)\\]"
+    r"\[Source: (?P<filename>.+?), page (?P<page>\d+|unknown)\]"
 )
 
 
@@ -29,7 +29,7 @@ def validate_search_query(query: str, max_length: int = MAX_SEARCH_QUERY_LENGTH)
     if len(normalized) > max_length:
         raise ValueError(f"Search query cannot exceed {max_length} characters.")
 
-    if any(ord(char) < 32 and char not in "\\t\\n\\r" for char in normalized):
+    if any(ord(char) < 32 and char not in "\t\n\r" for char in normalized):
         raise ValueError("Search query contains unsupported control characters.")
 
     return normalized
