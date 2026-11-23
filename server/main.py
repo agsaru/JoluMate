@@ -15,7 +15,8 @@ from conversation.router import router as conv_router
 from logs.logging_config import logger
 from middlewares.log_requests import log_requests
 from configs.db import pool
-from agent.graph import checkpointer
+import agent.graph as agent_graph
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 load_dotenv()
 
@@ -26,7 +27,9 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await pool.open()
+    checkpointer = AsyncPostgresSaver(pool)
     await checkpointer.setup()
+    agent_graph.workflow = agent_graph.graph.compile(checkpointer=checkpointer)
     logger.info("Database pool opened and checkpointer initialized")
     yield
     await pool.close()

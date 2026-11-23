@@ -7,10 +7,8 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from configs.db import pool
 from rag.tools import search_knowledge_base
 from rag.guardrails import extract_retrieved_sources, validate_answer_citations
 
@@ -170,5 +168,6 @@ graph.add_edge("route", "agent")
 graph.add_conditional_edges("agent", tools_condition)
 graph.add_edge("tools", "agent")
 
-checkpointer = AsyncPostgresSaver(pool)
-workflow = graph.compile(checkpointer=checkpointer)
+# Compile without a checkpointer at import time. AsyncPostgresSaver must be
+# initialized inside FastAPI's running event loop (see main.py lifespan).
+workflow = graph.compile()
