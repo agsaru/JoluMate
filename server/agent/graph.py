@@ -4,7 +4,7 @@ from typing import Annotated, Literal, TypedDict
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -12,6 +12,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from configs.db import pool
 from rag.tools import search_knowledge_base
+from rag.guardrails import validate_answer_citations
 
 load_dotenv()
 
@@ -111,6 +112,30 @@ RESPONSE STYLE
         response = await document_llm.ainvoke(messages)
     else:
         response = await llm.ainvoke(messages)
+
+    # Deterministically verify citation references after document-grounded answers.
+    # This does not score semantic faithfulness or make another model/API call.
+    if state["route"] == "documents" and isinstance(last_message, ToolMessage):
+        retrieved_context = "\\n".join(
+            message.content
+            for message in state["messages"]
+            if isinstance(message, ToolMessage) and isinstance(message.content, str)
+        )
+        if isinstance(response.content, str):
+            citation_check = validate_answer_citations(
+                response.content,
+                retrieved_context,
+                require_citations=True,
+            )
+            if not citation_check["valid"]:
+                response = AIMessage(
+                    content=(
+                        "I couldn't verify the source citations for this answer against "
+                        "the retrieved study material, so I won't present it as a "
+                        "source-verified answer. Please ask again or upload the relevant "
+                        "material with clear page information."
+                    )
+                )
 
     return {"messages": response}
 
